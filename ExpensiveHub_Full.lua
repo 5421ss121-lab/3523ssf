@@ -2349,9 +2349,7 @@ end
 function ConfigManager:SetProfile(n)
 	if not n or n == "" then return false end
 	if self:SaveExists(n) then
-		local ok = self:Load(n)
-		if ok then task.defer(function() self:FireAllCallbacks() end) end
-		return ok
+		return self:Load(n) -- Load fires callbacks on success
 	else
 		if not self.Profiles[n] then self.Profiles[n] = self:CollectAll() end
 		self.Active = n
@@ -2455,13 +2453,14 @@ function ConfigManager:Load(name)
 			end
 		end
 	end)
+	-- ApplyData sets values silently (noCallback); fire callbacks once so the
+	-- feature logic matches the loaded state (otherwise: visual on, logic off).
+	if ok then task.defer(function() self:FireAllCallbacks() end) end
 	return ok
 end
 
 function ConfigManager:LoadEnhanced(name)
-	local ok = self:Load(name)
-	if ok then task.defer(function() self:FireAllCallbacks() end) end
-	return ok
+	return self:Load(name) -- Load already fires callbacks
 end
 
 function ConfigManager:AutoLoad()
@@ -2472,7 +2471,9 @@ function ConfigManager:AutoLoad()
 		ok = self:Load("Default")
 	end
 	self._loaded = true
-	task.defer(function() self:FireAllCallbacks() end)
+	-- Load() fires callbacks when it succeeds; if nothing was loaded (first run),
+	-- still apply the Default-value callbacks once so defaults activate.
+	if not ok then task.defer(function() self:FireAllCallbacks() end) end
 	return ok
 end
 
@@ -2490,7 +2491,10 @@ function ConfigManager:ListSaves()
 	pcall(function()
 		if listfiles then
 			for _, file in ipairs(listfiles(self:_userFolder())) do
-				local name = string.match(file, "([^/\]+)%.json$")
+				-- normalize Windows back-slashes first; listfiles returns full paths and
+				-- the old pattern failed to strip "\", capturing the whole path as the name.
+				local norm = file:gsub("\\", "/")
+				local name = norm:match("([^/]+)%.json$")
 				if name and name ~= "_meta" then saves[#saves+1] = name end
 			end
 		end
@@ -2614,6 +2618,8 @@ function Library:CreateWindow(cfg)
 		Config = ConfigManager.new(cfg.ConfigName or title:gsub("%s+", ""), cfg.ConfigFolder),
 		AutoSaveEnabled = true,
 	}
+	-- Single source of truth: the window flag registry IS the ConfigManager registry.
+	W._flags = W.Config.Flags
 
 	local sidebarExpanded = false
 	local sidebarHoverLock = false
@@ -2641,7 +2647,8 @@ function Library:CreateWindow(cfg)
 	end
 
 	local uiScaleObj = Instance.new("UIScale")
-	uiScaleObj.Scale = 1
+	-- Mobile defaults to 80% so the window doesn't dominate small touch screens.
+	uiScaleObj.Scale = IS_MOBILE and 0.8 or 1
 	uiScaleObj.Parent = screenGui
 
 	local main = Instance.new("CanvasGroup")
@@ -3152,7 +3159,11 @@ function Library:CreateWindow(cfg)
 	W:SetBackground(activeBG)
 
 	if introOn then
-		local intro = Instance.new("CanvasGroup")
+		-- Plain Frame, NOT a CanvasGroup: CanvasGroup pre-rasterizes all children
+		-- into an offscreen buffer, which blurs text/icons (very visible fullscreen on hi-res).
+		-- All elements already fade out individually below, so the final fade only needs
+		-- to dissolve this background fill via BackgroundTransparency.
+		local intro = Instance.new("Frame")
 		intro.BackgroundTransparency = 0
 		intro.BackgroundColor3 = C.BG
 		intro.Size = UDim2.new(1, 0, 1, 0)
@@ -3367,7 +3378,7 @@ function Library:CreateWindow(cfg)
 			tw(orbB, 0.4, {BackgroundTransparency = 1}, Enum.EasingStyle.Quint)
 
 			task.wait(0.3)
-			tw(intro, 0.3, {GroupTransparency = 1}, Enum.EasingStyle.Quint)
+			tw(intro, 0.3, {BackgroundTransparency = 1}, Enum.EasingStyle.Quint)
 			task.wait(0.35)
 			if intro and intro.Parent then intro:Destroy() end
 		end)
@@ -3603,6 +3614,18 @@ function Library:CreateWindow(cfg)
 		strokeInst(mobileBtn, C.Border, 1.5, 0.3)
 		addClayShadow(mobileBtn, 24)
 
+		local mobileIcon = Instance.new("ImageLabel")
+		noHit(mobileIcon)
+		mobileIcon.BackgroundTransparency = 1
+		mobileIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+		mobileIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
+		mobileIcon.Size = UDim2.new(0, 26, 0, 26)
+		mobileIcon.Image = getIconAsset("flare") or "rbxassetid://6031280882"
+		mobileIcon.ImageColor3 = C.Accent
+		mobileIcon.ScaleType = Enum.ScaleType.Fit
+		mobileIcon.ZIndex = 100
+		mobileIcon.Parent = mobileBtn
+
 		local mobileDragging = false
 		local mobileDragStart = nil
 		local mobileBtnStart = nil
@@ -3695,7 +3718,10 @@ function Library:CreateWindow(cfg)
 	sideLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 		task.defer(function()
 			if sideScroll and sideScroll.Parent then
-				sideScroll.CanvasSize = UDim2.new(0, 0, 0, sideLayout.AbsoluteContentSize.Y + 24)
+				-- AbsoluteContentSize is in scaled px; divide by UIScale so CanvasSize (local
+				-- space) stays correct when UI Scale < 100% — otherwise the canvas shrinks
+				-- below the content and the bottom tabs become unreachable.
+				sideScroll.CanvasSize = UDim2.new(0, 0, 0, sideLayout.AbsoluteContentSize.Y / math.max(uiScaleObj.Scale, 0.01) + 24)
 			end
 		end)
 	end)
@@ -3815,7 +3841,7 @@ function Library:CreateWindow(cfg)
 			if info2.label and info2.label.Parent then
 				tw(info2.label, dur, {TextTransparency = 1}, style, dir)
 				task.delay(dur, function()
-					if info2.label and info2.label.Parent then info2.label.Visible = false end
+					if not sidebarExpanded and info2.label and info2.label.Parent then info2.label.Visible = false end
 				end)
 			end
 		end
@@ -3823,7 +3849,7 @@ function Library:CreateWindow(cfg)
 			tw(playerNameLabel, dur, {TextTransparency = 1}, style, dir)
 			tw(playerIdLabel, dur, {TextTransparency = 1}, style, dir)
 			task.delay(dur, function()
-				if playerNameLabel and playerNameLabel.Parent then
+				if not sidebarExpanded and playerNameLabel and playerNameLabel.Parent then
 					playerNameLabel.Visible = false
 					playerIdLabel.Visible = false
 				end
@@ -4655,7 +4681,8 @@ function Library:CreateWindow(cfg)
 		subTabScroll.Parent = subTabBar
 		local subTabLayout = uiList(subTabScroll, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
 		subTabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-			subTabScroll.CanvasSize = UDim2.new(0, subTabLayout.AbsoluteContentSize.X + 24, 0, 0)
+			-- divide by UIScale: AbsoluteContentSize is scaled px, CanvasSize is local space
+			subTabScroll.CanvasSize = UDim2.new(0, subTabLayout.AbsoluteContentSize.X / math.max(uiScaleObj.Scale, 0.01) + 24, 0, 0)
 		end)
 
 		local contentScroll = Instance.new("ScrollingFrame")
@@ -5047,7 +5074,7 @@ function Library:CreateWindow(cfg)
 					updateToggle()
 				end)
 
-				if toggled then task.defer(function() updateToggle(false) end) end
+				if toggled then task.defer(function() updateToggle(false, true) end) end
 
 				local elemData = {Name = tc2.Name or "Toggle", Tab = Tab.Name, SubTab = subTabName, Group = gc.Name, Type = "Toggle", _card = card}
 				W._elems[#W._elems + 1] = elemData
@@ -5182,7 +5209,7 @@ function Library:CreateWindow(cfg)
 					if sc2.Flag then W.Config:Set(sc2.Flag, value) end
 					if sc2.Callback and not suppressCallback then task.spawn(sc2.Callback, value) end
 				end
-				updateVisual(value)
+				updateVisual(value, true) -- initial render must not fire the callback
 
 				local sliderDragging = false
 
