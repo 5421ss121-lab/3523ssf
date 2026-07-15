@@ -2562,7 +2562,7 @@ function ConfigManager:SaveExists(name)
 end
 
 local BlurEffect = nil
-local blurEnabled = true
+local blurEnabled = false
 
 local function createBlur()
 	pcall(function()
@@ -3257,7 +3257,7 @@ function Library:CreateWindow(cfg)
 		iSub.Size = UDim2.new(0.5, 0, 0, math.floor(16 * SC))
 		iSub.Font = Enum.Font.GothamMedium
 		iSub.TextSize = math.floor(12 * SC)
-		iSub.Text = cfg.Subtitle or "by n3x"
+		iSub.Text = cfg.Subtitle or "by skg & n3x"
 		iSub.TextColor3 = C.Sub
 		iSub.TextTransparency = 1
 		iSub.ZIndex = 106
@@ -4943,7 +4943,8 @@ function Library:CreateWindow(cfg)
 				return elemOrder
 			end
 
-			local function createCard(height)
+			local function createCard(height, opts)
+				opts = opts or {}
 				local card = Instance.new("TextButton")
 				card.BackgroundColor3 = C.SurfaceAlt
 				card.BackgroundTransparency = 0.12
@@ -4956,10 +4957,50 @@ function Library:CreateWindow(cfg)
 				card.ZIndex = 9
 				card.Parent = gContent
 				corner(card, 14)
-				addClayShadow(card, 14)
+				if not opts.noShadow then
+					addClayShadow(card, 14)
+				end
 				strokeInst(card, C.Border, 1, 0.6)
 				addHoverLift(card, 2)
 				return card
+			end
+
+			-- Clay-style shadow with a FIXED height (width still hugs the card). Used for
+			-- text cards whose height grows via AutomaticSize: the shadow stays the same
+			-- compact size as a normal ~44px card instead of stretching with the text.
+			-- Center-anchored so it stays put; scale-sized on X so it never inflates the
+			-- card's AutomaticSize.
+			local function addFixedShadow(card)
+				local h1 = math.floor(56 * SC)
+				local h2 = math.floor(72 * SC)
+
+				local shadow = Instance.new("ImageLabel")
+				noHit(shadow)
+				shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+				shadow.BackgroundTransparency = 1
+				shadow.Position = UDim2.new(0.5, 3, 0.5, 3)
+				shadow.Size = UDim2.new(1, 12, 0, h1)
+				shadow.ZIndex = card.ZIndex - 1
+				shadow.Image = "rbxassetid://6014261993"
+				shadow.ImageColor3 = C.ClayShadow
+				shadow.ImageTransparency = 0.35
+				shadow.ScaleType = Enum.ScaleType.Slice
+				shadow.SliceCenter = Rect.new(49, 49, 450, 450)
+				shadow.Parent = card
+
+				local shadow2 = Instance.new("ImageLabel")
+				noHit(shadow2)
+				shadow2.AnchorPoint = Vector2.new(0.5, 0.5)
+				shadow2.BackgroundTransparency = 1
+				shadow2.Position = UDim2.new(0.5, 5, 0.5, 6)
+				shadow2.Size = UDim2.new(1, 28, 0, h2)
+				shadow2.ZIndex = card.ZIndex - 2
+				shadow2.Image = "rbxassetid://6014261993"
+				shadow2.ImageColor3 = C.ClayShadowDeep
+				shadow2.ImageTransparency = 0.55
+				shadow2.ScaleType = Enum.ScaleType.Slice
+				shadow2.SliceCenter = Rect.new(49, 49, 450, 450)
+				shadow2.Parent = card
 			end
 
 			function G:CreateToggle(tc2)
@@ -6034,20 +6075,29 @@ function Library:CreateWindow(cfg)
 			function G:CreateLabel(lc)
 				lc = lc or {}
 				local text = lc.Text or ""
-				local wrapLines = math.max(1, math.ceil(#text / 35))
-				local lH = math.max(math.floor(36 * SC), math.floor((wrapLines * 16 + 16) * SC))
-				local lCard = createCard(lH)
+				local lCard = createCard(0, {noShadow = true})
+				lCard.AutomaticSize = Enum.AutomaticSize.Y
+				addFixedShadow(lCard)
+
+				-- Top padding smaller than bottom to compensate for the font's line-box
+				-- leading (more empty space above glyphs than below), so text looks centered.
+				local lPad = Instance.new("UIPadding")
+				lPad.PaddingTop = UDim.new(0, math.floor(8 * SC))
+				lPad.PaddingBottom = UDim.new(0, math.floor(11 * SC))
+				lPad.Parent = lCard
+
 				local l = Instance.new("TextLabel")
 				noHit(l)
 				l.BackgroundTransparency = 1
-				l.Position = UDim2.new(0, 14, 0, 0)
-				l.Size = UDim2.new(1, -28, 1, 0)
+				l.Position = UDim2.new(0, 16, 0, 0)
+				l.Size = UDim2.new(1, -32, 0, 0)
+				l.AutomaticSize = Enum.AutomaticSize.Y
 				l.Font = Enum.Font.GothamBold
 				l.TextSize = lc.TextSize or FONT_ELEM_VALUE
 				l.Text = text
 				l.TextColor3 = C.Text
 				l.TextXAlignment = Enum.TextXAlignment.Left
-				l.TextYAlignment = Enum.TextYAlignment.Center
+				l.TextYAlignment = Enum.TextYAlignment.Top
 				l.TextWrapped = true
 				l.ZIndex = 10
 				l.Parent = lCard
@@ -6059,24 +6109,30 @@ function Library:CreateWindow(cfg)
 				local content = pc.Content or ""
 				local title = pc.Title or ""
 				local fullText = title ~= "" and (title .. "\n" .. content) or content
-				local lineCount = 1
-				for _ in fullText:gmatch("\n") do lineCount = lineCount + 1 end
-				local wrapLines = math.ceil(#fullText / 35)
-				lineCount = math.max(lineCount, wrapLines)
-				local pH = math.max(math.floor(44 * SC), math.floor((lineCount * 16 + 20) * SC))
-				local pCard = createCard(pH)
+				local pCard = createCard(0, {noShadow = true})
+				pCard.AutomaticSize = Enum.AutomaticSize.Y
+				addFixedShadow(pCard)
+
+				-- Top padding is intentionally smaller than bottom: the font's line box has
+				-- more empty space above the glyphs than below, so equal padding reads as
+				-- "too much on top". This compensates so the text looks vertically centered.
+				local pPad = Instance.new("UIPadding")
+				pPad.PaddingTop = UDim.new(0, math.floor(10 * SC))
+				pPad.PaddingBottom = UDim.new(0, math.floor(13 * SC))
+				pPad.Parent = pCard
 
 				local cL = Instance.new("TextLabel")
 				noHit(cL)
 				cL.BackgroundTransparency = 1
-				cL.Position = UDim2.new(0, 14, 0, 0)
-				cL.Size = UDim2.new(1, -28, 1, 0)
+				cL.Position = UDim2.new(0, 16, 0, 0)
+				cL.Size = UDim2.new(1, -32, 0, 0)
+				cL.AutomaticSize = Enum.AutomaticSize.Y
 				cL.Font = Enum.Font.GothamBold
 				cL.TextSize = FONT_ELEM_VALUE
 				cL.Text = fullText
 				cL.TextColor3 = C.Text
 				cL.TextXAlignment = Enum.TextXAlignment.Left
-				cL.TextYAlignment = Enum.TextYAlignment.Center
+				cL.TextYAlignment = Enum.TextYAlignment.Top
 				cL.TextWrapped = true
 				cL.ZIndex = 10
 				cL.Parent = pCard
