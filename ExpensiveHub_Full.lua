@@ -2201,32 +2201,40 @@ end
 
 local function addShimmer(parent, color, rad)
 	if not ANIM_ENABLED then return nil end
+	rad = rad or 18
 	parent.ClipsDescendants = true
+
+	-- The highlight fills the header with the SAME rounded corners as the card and
+	-- extends past the bottom (which the header's clip trims to a straight edge), so
+	-- its shape matches the card exactly: rounded top corners, straight sides. The
+	-- sweep is a bright band slid across via UIGradient.Offset. ClipsDescendants
+	-- ignores UICorner, so a moving hard-edged bar showed square nubs at the corners
+	-- (and simply insetting it left an ugly hard cut) — a gradient inside a
+	-- corner-matched frame has no hard edge to square off.
 	local shimmer = Instance.new("Frame")
 	noHit(shimmer)
 	shimmer.BackgroundColor3 = color or C.Accent
-	shimmer.BackgroundTransparency = 0.82
-	shimmer.Size = UDim2.new(0.2, 0, 1, 0)
-	shimmer.Position = UDim2.new(-0.3, 0, 0, 0)
+	shimmer.Size = UDim2.new(1, 0, 1, rad)
+	shimmer.Position = UDim2.new(0, 0, 0, 0)
 	shimmer.ZIndex = parent.ZIndex + 1
 	shimmer.Parent = parent
-	corner(shimmer, rad or 18)
+	corner(shimmer, rad)
 
 	local sg = Instance.new("UIGradient")
 	sg.Transparency = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(0.15, 0.92),
-		NumberSequenceKeypoint.new(0.4, 0.15),
-		NumberSequenceKeypoint.new(0.6, 0.15),
-		NumberSequenceKeypoint.new(0.85, 0.92),
+		NumberSequenceKeypoint.new(0.34, 1),
+		NumberSequenceKeypoint.new(0.5, 0.6),
+		NumberSequenceKeypoint.new(0.66, 1),
 		NumberSequenceKeypoint.new(1, 1),
 	})
+	sg.Offset = Vector2.new(-0.9, 0)
 	sg.Parent = shimmer
 
 	local function doShimmer()
 		if not ANIM_ENABLED then return end
-		shimmer.Position = UDim2.new(-0.3, 0, 0, 0)
-		tw(shimmer, 2.8, {Position = UDim2.new(1, 0, 0, 0)}, Enum.EasingStyle.Sine)
+		sg.Offset = Vector2.new(-0.9, 0)
+		tw(sg, 2.6, {Offset = Vector2.new(0.9, 0)}, Enum.EasingStyle.Sine)
 	end
 	doShimmer()
 	local _shimmerTimer = 0
@@ -2615,6 +2623,10 @@ function Library:CreateWindow(cfg)
 		_flags = {},
 		_elems = {},
 		_activeFeatures = {},
+		-- Names the user has opted out of the Active Features panel (via a toggle's
+		-- HideFromActive option or Window:SetFeatureHiddenFromActive). The feature
+		-- still works and still counts internally; it just isn't listed in the panel.
+		_activeHidden = {},
 		Config = ConfigManager.new(cfg.ConfigName or title:gsub("%s+", ""), cfg.ConfigFolder),
 		AutoSaveEnabled = true,
 	}
@@ -3309,83 +3321,98 @@ function Library:CreateWindow(cfg)
 		line1.Parent = intro
 
 		task.spawn(function()
-			task.wait(0.1)
+			task.wait(0.05)
 
-			tw(orbA, 1.2, {Size = UDim2.new(0, math.floor(280*SC), 0, math.floor(280*SC)), BackgroundTransparency = 0.85}, Enum.EasingStyle.Quint)
-			task.wait(0.08)
-			tw(orbB, 1.4, {Size = UDim2.new(0, math.floor(200*SC), 0, math.floor(200*SC)), BackgroundTransparency = 0.9}, Enum.EasingStyle.Quint)
+			-- Build-up: everything overlaps and snaps in fast instead of the old
+			-- ~1.2s-per-element crawl. Ring spins as it grows for a bit of energy.
+			tw(orbA, 0.55, {Size = UDim2.new(0, math.floor(280*SC), 0, math.floor(280*SC)), BackgroundTransparency = 0.85}, Enum.EasingStyle.Quint)
+			tw(orbB, 0.6, {Size = UDim2.new(0, math.floor(200*SC), 0, math.floor(200*SC)), BackgroundTransparency = 0.9}, Enum.EasingStyle.Quint)
+			tw(line1, 0.4, {Size = UDim2.new(0, math.floor(120*SC), 0, 1), BackgroundTransparency = 0.7}, Enum.EasingStyle.Quint)
 
-			tw(line1, 0.6, {Size = UDim2.new(0, math.floor(120*SC), 0, 1), BackgroundTransparency = 0.7}, Enum.EasingStyle.Quint)
-
-			tw(ring, 0.7, {Size = UDim2.new(0, math.floor(85*SC), 0, math.floor(85*SC))}, Enum.EasingStyle.Quint)
+			tw(ring, 0.45, {Size = UDim2.new(0, math.floor(85*SC), 0, math.floor(85*SC)), Rotation = 90}, Enum.EasingStyle.Quint)
 			for _, s in pairs(ring:GetChildren()) do
-				if s:IsA("UIStroke") then tw(s, 0.7, {Transparency = 0.25}, Enum.EasingStyle.Quint) end
+				if s:IsA("UIStroke") then tw(s, 0.45, {Transparency = 0.25}, Enum.EasingStyle.Quint) end
 			end
 
-			task.wait(0.2)
-			tw(glow1, 0.6, {Size = UDim2.new(0, math.floor(120*SC), 0, math.floor(120*SC)), ImageTransparency = 0.7}, Enum.EasingStyle.Quint)
-			tw(iIcon, 0.6, {Size = UDim2.new(0, iconSz, 0, iconSz), ImageTransparency = 0, Rotation = 0}, Enum.EasingStyle.Back)
-			playSound(Sounds.expand, 0.12, 1.1)
+			task.wait(0.12)
+			tw(glow1, 0.4, {Size = UDim2.new(0, math.floor(120*SC), 0, math.floor(120*SC)), ImageTransparency = 0.7}, Enum.EasingStyle.Quint)
+			tw(iIcon, 0.45, {Size = UDim2.new(0, iconSz, 0, iconSz), ImageTransparency = 0, Rotation = 0}, Enum.EasingStyle.Back)
+			playSound(Sounds.expand, 0.12, 1.15)
 
 			for i, d in ipairs(dots) do
 				local ang = (i / #dots) * math.pi * 2 + math.random() * 0.3
 				local dist = math.floor((55 + math.random() * 35) * SC)
 				local tx = 0.5 + math.cos(ang) * dist / 800
 				local ty = cY + math.sin(ang) * dist / 600
-				task.delay(i * 0.02, function()
-					tw(d, 0.45, {Position = UDim2.new(tx, 0, ty, 0), BackgroundTransparency = 0.2}, Enum.EasingStyle.Quint)
+				task.delay(i * 0.012, function()
+					tw(d, 0.35, {Position = UDim2.new(tx, 0, ty, 0), BackgroundTransparency = 0.2}, Enum.EasingStyle.Quint)
 				end)
-				task.delay(0.35 + i * 0.03, function()
-					tw(d, 0.3, {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 0)}, Enum.EasingStyle.Quint)
+				task.delay(0.28 + i * 0.02, function()
+					tw(d, 0.28, {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 0)}, Enum.EasingStyle.Quint)
 				end)
 			end
 
-			task.wait(0.45)
-			tw(iIcon, 0.2, {Size = UDim2.new(0, math.floor(iconSz*1.15), 0, math.floor(iconSz*1.15))}, Enum.EasingStyle.Quint)
-			task.wait(0.12)
-			tw(iIcon, 0.2, {Size = UDim2.new(0, iconSz, 0, iconSz)}, Enum.EasingStyle.Back)
+			task.wait(0.33)
+			-- Icon pop + an expanding accent shockwave ring for a punchier hit.
+			tw(iIcon, 0.13, {Size = UDim2.new(0, math.floor(iconSz*1.18), 0, math.floor(iconSz*1.18))}, Enum.EasingStyle.Quint)
+			local shock = Instance.new("Frame")
+			noHit(shock)
+			shock.AnchorPoint = Vector2.new(0.5, 0.5)
+			shock.BackgroundTransparency = 1
+			shock.Position = UDim2.new(0.5, 0, cY, 0)
+			shock.Size = UDim2.new(0, math.floor(60*SC), 0, math.floor(60*SC))
+			shock.ZIndex = 103
+			shock.Parent = intro
+			corner(shock, 999)
+			local shockStroke = strokeInst(shock, C.Accent, 2, 0.2)
+			tw(shock, 0.5, {Size = UDim2.new(0, math.floor(230*SC), 0, math.floor(230*SC))}, Enum.EasingStyle.Quint)
+			tw(shockStroke, 0.5, {Transparency = 1, Thickness = 0}, Enum.EasingStyle.Quint)
+			task.delay(0.55, function() if shock and shock.Parent then shock:Destroy() end end)
+			task.wait(0.11)
+			tw(iIcon, 0.18, {Size = UDim2.new(0, iconSz, 0, iconSz)}, Enum.EasingStyle.Back)
 
-			task.wait(0.15)
+			task.wait(0.06)
 			local fullTitle = title or "Expensive Hub"
-			tw(iTitle, 0.01, {TextTransparency = 0})
+			iTitle.TextTransparency = 0
 			for ci = 1, #fullTitle do
 				iTitle.Text = string.sub(fullTitle, 1, ci)
-				task.wait(0.028)
+				task.wait(0.018)
 			end
+
+			task.wait(0.05)
+			tw(iSub, 0.3, {TextTransparency = 0}, Enum.EasingStyle.Quint)
+			tw(line1, 0.35, {Size = UDim2.new(0, math.floor(200*SC), 0, 1), BackgroundTransparency = 0.85}, Enum.EasingStyle.Quint)
 
 			task.wait(0.08)
-			tw(iSub, 0.4, {TextTransparency = 0}, Enum.EasingStyle.Quint)
-			tw(line1, 0.4, {Size = UDim2.new(0, math.floor(200*SC), 0, 1), BackgroundTransparency = 0.85}, Enum.EasingStyle.Quint)
-
-			task.wait(0.12)
 			tw(barBg, 0.2, {BackgroundTransparency = 0.5})
-			tw(barFill, 0.9, {Size = UDim2.new(1, 0, 1, 0)}, Enum.EasingStyle.Quint)
+			tw(barFill, 0.5, {Size = UDim2.new(1, 0, 1, 0)}, Enum.EasingStyle.Quint)
 
-			task.wait(1.1)
+			task.wait(0.5)
 
+			-- Snappy outro: elements burst outward and dissolve.
 			for _, s in pairs(ring:GetChildren()) do
-				if s:IsA("UIStroke") then tw(s, 0.25, {Transparency = 1}) end
+				if s:IsA("UIStroke") then tw(s, 0.22, {Transparency = 1}) end
 			end
-			tw(ring, 0.3, {Size = UDim2.new(0, math.floor(180*SC), 0, math.floor(180*SC))}, Enum.EasingStyle.Quint)
-			tw(iIcon, 0.3, {ImageTransparency = 1, Size = UDim2.new(0, math.floor(iconSz*0.4), 0, math.floor(iconSz*0.4)), Rotation = 90}, Enum.EasingStyle.Quint)
-			tw(glow1, 0.35, {ImageTransparency = 1, Size = UDim2.new(0, math.floor(200*SC), 0, math.floor(200*SC))}, Enum.EasingStyle.Quint)
-			tw(iTitle, 0.25, {TextTransparency = 1, Position = UDim2.new(0.5, 0, cY + 0.07, 0)}, Enum.EasingStyle.Quint)
+			tw(ring, 0.3, {Size = UDim2.new(0, math.floor(200*SC), 0, math.floor(200*SC)), Rotation = 200}, Enum.EasingStyle.Quint)
+			tw(iIcon, 0.3, {ImageTransparency = 1, Size = UDim2.new(0, math.floor(iconSz*0.4), 0, math.floor(iconSz*0.4)), Rotation = 120}, Enum.EasingStyle.Quint)
+			tw(glow1, 0.3, {ImageTransparency = 1, Size = UDim2.new(0, math.floor(210*SC), 0, math.floor(210*SC))}, Enum.EasingStyle.Quint)
+			tw(iTitle, 0.25, {TextTransparency = 1, Position = UDim2.new(0.5, 0, cY + 0.06, 0)}, Enum.EasingStyle.Quint)
 			tw(iSub, 0.2, {TextTransparency = 1}, Enum.EasingStyle.Quint)
 			tw(barBg, 0.2, {BackgroundTransparency = 1})
 			tw(barFill, 0.2, {BackgroundTransparency = 1})
-			tw(line1, 0.3, {BackgroundTransparency = 1})
-			tw(orbA, 0.4, {Size = UDim2.new(0, math.floor(500*SC), 0, math.floor(500*SC)), BackgroundTransparency = 1}, Enum.EasingStyle.Quint)
-			tw(orbB, 0.4, {BackgroundTransparency = 1}, Enum.EasingStyle.Quint)
+			tw(line1, 0.25, {BackgroundTransparency = 1})
+			tw(orbA, 0.35, {Size = UDim2.new(0, math.floor(520*SC), 0, math.floor(520*SC)), BackgroundTransparency = 1}, Enum.EasingStyle.Quint)
+			tw(orbB, 0.35, {BackgroundTransparency = 1}, Enum.EasingStyle.Quint)
 
-			task.wait(0.3)
-			tw(intro, 0.3, {BackgroundTransparency = 1}, Enum.EasingStyle.Quint)
-			task.wait(0.35)
+			task.wait(0.22)
+			tw(intro, 0.28, {BackgroundTransparency = 1}, Enum.EasingStyle.Quint)
+			task.wait(0.32)
 			if intro and intro.Parent then intro:Destroy() end
 		end)
 	end
 
 	task.spawn(function()
-		if introOn then task.wait(3.8) end
+		if introOn then task.wait(1.45) end
 		if blurEnabled then showBlur() end
 		tw(main, 0.6, {Size = UDim2.new(0, WW, 0, WH), GroupTransparency = 0}, Enum.EasingStyle.Back)
 		playSound(Sounds.expand, 0.15, 0.9)
@@ -3457,7 +3484,7 @@ function Library:CreateWindow(cfg)
 	logoText.Parent = topbar
 
 	task.spawn(function()
-		if introOn then task.wait(4.2) else task.wait(0.8) end
+		if introOn then task.wait(1.8) else task.wait(0.8) end
 		tw(logoIcon, 0.5, {Rotation = 720, Position = UDim2.new(0, 27, 0.5, 0)}, Enum.EasingStyle.Quint)
 		task.wait(0.4)
 		tw(logoIcon, 0.3, {Rotation = 0}, Enum.EasingStyle.Back)
@@ -4063,6 +4090,25 @@ function Library:CreateWindow(cfg)
 	activeCountLabel.TextColor3 = C.Text
 	activeCountLabel.ZIndex = 49
 	activeCountLabel.Parent = activeCountBadge
+	strokeInst(activeCountBadge, C.Accent, 1, 0.35)
+
+	-- Hairline under the header separates title/count from the feature list.
+	local headerDivider = Instance.new("Frame")
+	noHit(headerDivider)
+	headerDivider.BackgroundColor3 = C.Border
+	headerDivider.BackgroundTransparency = 0.35
+	headerDivider.Position = UDim2.new(0, 10, 0, ACTIVE_HEADER_H - 1)
+	headerDivider.Size = UDim2.new(1, -20, 0, 1)
+	headerDivider.ZIndex = 47
+	headerDivider.Parent = activeOverlay
+	local hdGrad = Instance.new("UIGradient")
+	hdGrad.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.2, 0),
+		NumberSequenceKeypoint.new(0.8, 0),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	hdGrad.Parent = headerDivider
 
 	local activeListFrame = Instance.new("ScrollingFrame")
 	noHit(activeListFrame)
@@ -4091,7 +4137,7 @@ function Library:CreateWindow(cfg)
 		local activeCount = 0
 		local sortedNames = {}
 		for name, val in pairs(W._activeFeatures) do
-			if val then
+			if val and not W._activeHidden[name] then
 				activeCount = activeCount + 1
 				sortedNames[#sortedNames + 1] = name
 			end
@@ -4114,23 +4160,25 @@ function Library:CreateWindow(cfg)
 		for i, name in ipairs(sortedNames) do
 			local item = Instance.new("Frame")
 			noHit(item)
-			item.BackgroundColor3 = C.Surface
-			item.BackgroundTransparency = 0.5
+			item.BackgroundColor3 = C.ActiveItemBG
+			item.BackgroundTransparency = 1
 			item.Size = UDim2.new(1, -6, 0, ACTIVE_ITEM_H)
 			item.LayoutOrder = i
 			item.ZIndex = 47
 			item.Parent = activeListFrame
-			corner(item, 5)
+			corner(item, 6)
 
-			local dot = Instance.new("Frame")
-			noHit(dot)
-			dot.AnchorPoint = Vector2.new(0, 0.5)
-			dot.BackgroundColor3 = C.Accent
-			dot.Position = UDim2.new(0, 6, 0.5, 0)
-			dot.Size = UDim2.new(0, math.floor(3 * SC), 0, math.floor(3 * SC))
-			dot.ZIndex = 49
-			dot.Parent = item
-			corner(dot, 99)
+			-- Slim accent edge reads cleaner than a floating dot and gives each row a spine.
+			local edge = Instance.new("Frame")
+			noHit(edge)
+			edge.AnchorPoint = Vector2.new(0, 0.5)
+			edge.BackgroundColor3 = C.Accent
+			edge.BackgroundTransparency = 1
+			edge.Position = UDim2.new(0, 5, 0.5, 0)
+			edge.Size = UDim2.new(0, math.floor(2 * SC), 0, math.floor(ACTIVE_ITEM_H * 0.5))
+			edge.ZIndex = 49
+			edge.Parent = item
+			corner(edge, 2)
 
 			local nameLabel = Instance.new("TextLabel")
 			noHit(nameLabel)
@@ -4141,11 +4189,20 @@ function Library:CreateWindow(cfg)
 			nameLabel.TextSize = math.floor(11 * SC)
 			nameLabel.Text = name
 			nameLabel.TextColor3 = C.Text
-			nameLabel.TextTransparency = 0.15
+			nameLabel.TextTransparency = 1
 			nameLabel.TextXAlignment = Enum.TextXAlignment.Left
 			nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 			nameLabel.ZIndex = 49
 			nameLabel.Parent = item
+
+			-- Quick, subtly staggered fade-in so the list feels alive on change.
+			local delayT = math.min((i - 1) * 0.02, 0.22)
+			task.delay(delayT, function()
+				if not item.Parent then return end
+				tw(item, 0.2, {BackgroundTransparency = 0.45}, Enum.EasingStyle.Quint)
+				tw(edge, 0.2, {BackgroundTransparency = 0.1}, Enum.EasingStyle.Quint)
+				tw(nameLabel, 0.2, {TextTransparency = 0.12}, Enum.EasingStyle.Quint)
+			end)
 
 			activeFeatureLabels[#activeFeatureLabels + 1] = item
 		end
@@ -4169,6 +4226,20 @@ function Library:CreateWindow(cfg)
 
 	function W:IsActivePanelVisible()
 		return W._activePanelEnabled
+	end
+
+	-- Hide/show a single feature in the Active Features panel by its display name
+	-- (the toggle's Name, or Flag if it has no Name). The feature keeps working and
+	-- keeps counting; it's only removed from the panel list. Equivalent to setting
+	-- HideFromActive on the toggle, but toggleable at runtime.
+	function W:SetFeatureHiddenFromActive(name, hidden)
+		if not name then return end
+		W._activeHidden[name] = hidden and true or nil
+		if updateActivePanel then updateActivePanel() end
+	end
+
+	function W:IsFeatureHiddenFromActive(name)
+		return W._activeHidden[name] == true
 	end
 
 	W._updateLog = {}
@@ -5006,6 +5077,13 @@ function Library:CreateWindow(cfg)
 			function G:CreateToggle(tc2)
 				tc2 = tc2 or {}
 				local toggled = tc2.Default or false
+				-- Key this toggle is tracked under in the Active panel (matches updateToggle).
+				local activeKey = tc2.Name or tc2.Flag
+				-- HideFromActive (alias: ShowInActive = false) keeps the toggle out of the
+				-- Active Features panel while still working/counting normally.
+				if activeKey and (tc2.HideFromActive or tc2.ShowInActive == false) then
+					W._activeHidden[activeKey] = true
+				end
 				local cH = math.floor(44 * SC)
 				local card = createCard(cH)
 
@@ -5125,6 +5203,13 @@ function Library:CreateWindow(cfg)
 					updateToggle(nil, noCallback)
 				end
 				function api:Get() return toggled end
+				-- Runtime control over this toggle's presence in the Active panel.
+				function api:SetHiddenFromActive(hidden)
+					if not activeKey then return end
+					W._activeHidden[activeKey] = hidden and true or nil
+					updateActivePanel()
+				end
+				function api:IsHiddenFromActive() return activeKey ~= nil and W._activeHidden[activeKey] == true end
 				api._cb = tc2.Callback
 				if tc2.Flag then W._flags[tc2.Flag] = api; W.Config:Register(tc2.Flag, api) end
 				return api
@@ -6072,79 +6157,236 @@ function Library:CreateWindow(cfg)
 				return api
 			end
 
+			-- Compact info line. A left accent tick + muted medium text gives it a
+			-- "home" so it reads as an intentional callout instead of bold text
+			-- floating in an oversized plate. The card hugs the text via a
+			-- scale-based clay shadow (excluded from AutomaticSize), unlike the old
+			-- fixed-offset shadow that forced every card to a ~62px minimum.
 			function G:CreateLabel(lc)
 				lc = lc or {}
 				local text = lc.Text or ""
-				local lCard = createCard(0, {noShadow = true})
-				lCard.AutomaticSize = Enum.AutomaticSize.Y
-				addFixedShadow(lCard)
+				local iconAsset = lc.Icon and getIconAsset(lc.Icon)
 
-				-- Top padding smaller than bottom to compensate for the font's line-box
-				-- leading (more empty space above glyphs than below), so text looks centered.
-				local lPad = Instance.new("UIPadding")
-				lPad.PaddingTop = UDim.new(0, math.floor(8 * SC))
-				lPad.PaddingBottom = UDim.new(0, math.floor(11 * SC))
-				lPad.Parent = lCard
+				local lCard = Instance.new("Frame")
+				lCard.BackgroundColor3 = C.SurfaceAlt
+				lCard.BackgroundTransparency = 0.15
+				lCard.Size = UDim2.new(1, 0, 0, math.floor(40 * SC))
+				lCard.LayoutOrder = gNext()
+				lCard.ZIndex = 9
+				lCard.Parent = gContent
+				corner(lCard, 12)
+				strokeInst(lCard, C.Border, 1, 0.55)
+				addClayShadow(lCard, 12)
+
+				local tick = Instance.new("Frame")
+				noHit(tick)
+				tick.AnchorPoint = Vector2.new(0, 0.5)
+				tick.BackgroundColor3 = accent
+				tick.Position = UDim2.new(0, 13, 0.5, 0)
+				tick.Size = UDim2.new(0, math.floor(3 * SC), 1, -18)
+				tick.ZIndex = 11
+				tick.Parent = lCard
+				corner(tick, 2)
+				local tickGrad = Instance.new("UIGradient")
+				tickGrad.Rotation = 90
+				tickGrad.Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, lerpColor(accent, C.Text, 0.4)),
+					ColorSequenceKeypoint.new(1, accent),
+				})
+				tickGrad.Parent = tick
+
+				local textX = 26
+				if iconAsset then
+					local ic = Instance.new("ImageLabel")
+					noHit(ic)
+					ic.BackgroundTransparency = 1
+					ic.AnchorPoint = Vector2.new(0, 0.5)
+					ic.Position = UDim2.new(0, 25, 0.5, 0)
+					ic.Size = UDim2.new(0, math.floor(14 * SC), 0, math.floor(14 * SC))
+					ic.Image = iconAsset
+					ic.ImageColor3 = accent
+					ic.ScaleType = Enum.ScaleType.Fit
+					ic.ZIndex = 11
+					ic.Parent = lCard
+					textX = 46
+				end
 
 				local l = Instance.new("TextLabel")
 				noHit(l)
 				l.BackgroundTransparency = 1
-				l.Position = UDim2.new(0, 16, 0, 0)
-				l.Size = UDim2.new(1, -32, 0, 0)
+				l.Position = UDim2.new(0, textX, 0, 0)
+				l.Size = UDim2.new(1, -(textX + 16), 0, 0)
 				l.AutomaticSize = Enum.AutomaticSize.Y
-				l.Font = Enum.Font.GothamBold
-				l.TextSize = lc.TextSize or FONT_ELEM_VALUE
+				l.Font = Enum.Font.GothamMedium
+				l.TextSize = lc.TextSize or math.floor(13 * SC)
 				l.Text = text
-				l.TextColor3 = C.Text
+				l.TextColor3 = lerpColor(C.Text, C.Sub, 0.22)
 				l.TextXAlignment = Enum.TextXAlignment.Left
 				l.TextYAlignment = Enum.TextYAlignment.Top
 				l.TextWrapped = true
+				l.LineHeight = 1.12
 				l.ZIndex = 10
 				l.Parent = lCard
+				-- Pad the text (not the card) so the tick keeps its absolute inset.
+				local lPad = Instance.new("UIPadding")
+				lPad.PaddingTop = UDim.new(0, math.floor(11 * SC))
+				lPad.PaddingBottom = UDim.new(0, math.floor(12 * SC))
+				lPad.Parent = l
+
+				-- Fixed-height card that tracks the text's measured height, so it always
+				-- hugs the content exactly. (Auto-sizing a card that also holds scale/offset
+				-- children misbehaves: scale children blow the height up, offset shadows
+				-- push the text to the top.)
+				local function syncLabelH()
+					lCard.Size = UDim2.new(1, 0, 0, math.max(math.floor(34 * SC), math.ceil(l.AbsoluteSize.Y)))
+				end
+				l:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncLabelH)
+				task.defer(syncLabelH)
+
 				return {Set = function(_, t) l.Text = t end, Get = function() return l.Text end, SetTextSize = function(_, s) l.TextSize = s end}
 			end
 
+			-- Titled block. A full-height accent stripe + a bold bright title over
+			-- muted, line-spaced body text gives a real visual hierarchy (was: title
+			-- and body identical bold-white, stacked with a newline).
 			function G:CreateParagraph(pc)
 				pc = pc or {}
 				local content = pc.Content or ""
 				local title = pc.Title or ""
-				local fullText = title ~= "" and (title .. "\n" .. content) or content
-				local pCard = createCard(0, {noShadow = true})
-				pCard.AutomaticSize = Enum.AutomaticSize.Y
-				addFixedShadow(pCard)
+				local iconAsset = pc.Icon and getIconAsset(pc.Icon)
 
-				-- Top padding is intentionally smaller than bottom: the font's line box has
-				-- more empty space above the glyphs than below, so equal padding reads as
-				-- "too much on top". This compensates so the text looks vertically centered.
-				local pPad = Instance.new("UIPadding")
-				pPad.PaddingTop = UDim.new(0, math.floor(10 * SC))
-				pPad.PaddingBottom = UDim.new(0, math.floor(13 * SC))
-				pPad.Parent = pCard
+				local pCard = Instance.new("Frame")
+				pCard.BackgroundColor3 = C.SurfaceAlt
+				pCard.BackgroundTransparency = 0.12
+				pCard.Size = UDim2.new(1, 0, 0, math.floor(56 * SC))
+				pCard.LayoutOrder = gNext()
+				pCard.ZIndex = 9
+				pCard.Parent = gContent
+				corner(pCard, 12)
+				strokeInst(pCard, C.Border, 1, 0.5)
+				addClayShadow(pCard, 12)
+
+				local stripe = Instance.new("Frame")
+				noHit(stripe)
+				stripe.AnchorPoint = Vector2.new(0, 0.5)
+				stripe.BackgroundColor3 = accent
+				stripe.Position = UDim2.new(0, 14, 0.5, 0)
+				stripe.Size = UDim2.new(0, math.floor(3 * SC), 1, -22)
+				stripe.ZIndex = 11
+				stripe.Parent = pCard
+				corner(stripe, 2)
+				local stripeGrad = Instance.new("UIGradient")
+				stripeGrad.Rotation = 90
+				stripeGrad.Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, lerpColor(accent, C.Text, 0.45)),
+					ColorSequenceKeypoint.new(1, accent),
+				})
+				stripeGrad.Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 0),
+					NumberSequenceKeypoint.new(1, 0.2),
+				})
+				stripeGrad.Parent = stripe
+
+				local holder = Instance.new("Frame")
+				noHit(holder)
+				holder.BackgroundTransparency = 1
+				holder.Position = UDim2.new(0, 28, 0, 0)
+				holder.Size = UDim2.new(1, -46, 0, 0)
+				holder.AutomaticSize = Enum.AutomaticSize.Y
+				holder.ZIndex = 10
+				holder.Parent = pCard
+				local hPad = Instance.new("UIPadding")
+				hPad.PaddingTop = UDim.new(0, math.floor(13 * SC))
+				hPad.PaddingBottom = UDim.new(0, math.floor(14 * SC))
+				hPad.Parent = holder
+				local hList = Instance.new("UIListLayout")
+				hList.FillDirection = Enum.FillDirection.Vertical
+				hList.SortOrder = Enum.SortOrder.LayoutOrder
+				hList.Padding = UDim.new(0, math.floor(5 * SC))
+				hList.Parent = holder
+
+				local titleLabel
+				if title ~= "" then
+					local titleRow = Instance.new("Frame")
+					noHit(titleRow)
+					titleRow.BackgroundTransparency = 1
+					titleRow.Size = UDim2.new(1, 0, 0, 0)
+					titleRow.AutomaticSize = Enum.AutomaticSize.Y
+					titleRow.LayoutOrder = 1
+					titleRow.ZIndex = 10
+					titleRow.Parent = holder
+
+					local tX = 0
+					if iconAsset then
+						local pIcon = Instance.new("ImageLabel")
+						noHit(pIcon)
+						pIcon.BackgroundTransparency = 1
+						pIcon.AnchorPoint = Vector2.new(0, 0.5)
+						pIcon.Position = UDim2.new(0, 0, 0, math.floor(8 * SC))
+						pIcon.Size = UDim2.new(0, math.floor(15 * SC), 0, math.floor(15 * SC))
+						pIcon.Image = iconAsset
+						pIcon.ImageColor3 = accent
+						pIcon.ScaleType = Enum.ScaleType.Fit
+						pIcon.ZIndex = 11
+						pIcon.Parent = titleRow
+						tX = math.floor(22 * SC)
+					end
+
+					titleLabel = Instance.new("TextLabel")
+					noHit(titleLabel)
+					titleLabel.BackgroundTransparency = 1
+					titleLabel.Position = UDim2.new(0, tX, 0, 0)
+					titleLabel.Size = UDim2.new(1, -tX, 0, 0)
+					titleLabel.AutomaticSize = Enum.AutomaticSize.Y
+					titleLabel.Font = Enum.Font.GothamBold
+					titleLabel.TextSize = FONT_ELEM_NAME
+					titleLabel.Text = title
+					titleLabel.TextColor3 = C.Text
+					titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+					titleLabel.TextYAlignment = Enum.TextYAlignment.Top
+					titleLabel.TextWrapped = true
+					titleLabel.ZIndex = 10
+					titleLabel.Parent = titleRow
+				end
 
 				local cL = Instance.new("TextLabel")
 				noHit(cL)
 				cL.BackgroundTransparency = 1
-				cL.Position = UDim2.new(0, 16, 0, 0)
-				cL.Size = UDim2.new(1, -32, 0, 0)
+				cL.Size = UDim2.new(1, 0, 0, 0)
 				cL.AutomaticSize = Enum.AutomaticSize.Y
-				cL.Font = Enum.Font.GothamBold
-				cL.TextSize = FONT_ELEM_VALUE
-				cL.Text = fullText
-				cL.TextColor3 = C.Text
+				cL.Font = Enum.Font.GothamMedium
+				cL.TextSize = math.floor(12.5 * SC)
+				cL.Text = content
+				cL.TextColor3 = C.Sub
 				cL.TextXAlignment = Enum.TextXAlignment.Left
 				cL.TextYAlignment = Enum.TextYAlignment.Top
 				cL.TextWrapped = true
+				cL.LineHeight = 1.2
+				cL.LayoutOrder = 2
 				cL.ZIndex = 10
-				cL.Parent = pCard
+				cL.Parent = holder
 
-				return {
-					Set = function(_, d)
-						local t = (d.Title or title)
-						local c = (d.Content or content)
-						cL.Text = t ~= "" and (t .. "\n" .. c) or c
-					end,
-					Get = function() return cL.Text end,
-				}
+				-- Card tracks the text column's measured height (see CreateLabel).
+				local function syncParaH()
+					pCard.Size = UDim2.new(1, 0, 0, math.max(math.floor(40 * SC), math.ceil(holder.AbsoluteSize.Y)))
+				end
+				holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncParaH)
+				task.defer(syncParaH)
+
+				local api = {}
+				function api:Set(d)
+					d = d or {}
+					if d.Title ~= nil then
+						title = d.Title
+						if titleLabel then titleLabel.Text = title end
+					end
+					if d.Content ~= nil then
+						content = d.Content
+						cL.Text = content
+					end
+				end
+				function api:Get() return title ~= "" and (title .. "\n" .. content) or content end
+				return api
 			end
 
 			function G:CreateSeparator()
